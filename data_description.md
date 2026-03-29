@@ -19,6 +19,7 @@ This project uses panel data of 30 insurance companies in Vietnam from 2016 to 2
 
 ### 🔹 Stage 1 Data Envelopment Analysis (DEA) 
 We use the following operational variables to calculate efficiency scores:
+
 **Inputs:**
 - Total Operating Expenses: Costs of insurance operations (Billion VND).
 - Total Debt: Total liabilities (Billion VND).
