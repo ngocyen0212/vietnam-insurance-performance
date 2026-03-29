@@ -1,0 +1,806 @@
+---
+title: "Final Thesis Project Code"
+author: "Ngoc Yen"
+date: "2025-06-25"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: readable
+    highlight: tango
+    df_print: kable
+    css: style.css
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+---
+
+
+## R Markdown
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+knitr::opts_chunk$set(
+  fig.width = 24,      # Figure width
+  fig.height = 16,     # Figure height
+  echo = TRUE,
+  warning = FALSE,     # Suppress warnings in output
+  message = FALSE      # Suppress messages in output
+)
+```
+```{r}
+# Set default CRAN mirror (fix contrib.url error)
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+```
+
+```{r}
+
+install.packages("readxl", dependencies = TRUE)
+install.packages("dplyr", dependencies = TRUE)
+install.packages("Benchmarking", dependencies = TRUE)
+install.packages("truncreg",dependencies = TRUE )
+install.packages("cellranger", dependencies = TRUE)
+install.packages("ggplot2", dependencies = TRUE)
+install.packages("tidyr", dependencies = TRUE)
+install.packages("AER", dependencies = TRUE)
+install.packages("stargazer", dependencies = TRUE)
+install.packages("psych", dependencies = TRUE)
+install.packages("knitr", dependencies = TRUE)
+install.packages("gtable", dependencies = TRUE)
+```
+```{r}
+ install.packages("knitr", dependencies = TRUE)
+```
+```{r}
+install.packages("psych", dependencies = TRUE)
+```
+
+
+
+```{r}
+library(readxl)
+library(Benchmarking)
+library(dplyr)
+library(cellranger)
+library(ggplot2)
+library(tidyr) 
+library(psych) 
+library(knitr)
+library(AER)
+library(stargazer)
+library(truncreg)
+library(gridExtra)
+library(texreg)
+library(xfun)
+```
+
+
+
+
+
+# Phase 1: Data Envelopment Analysis (DEA)
+This phase calculates Overall Technical Efficiency (OTE) using the CRS model, Pure Technical Efficiency (PTE) using the VRS model, and Scale Efficiency (SE).
+
+#1.1 Data Import and Initial Cleaning for DEA
+
+```{r}
+dea_raw <- read_excel("D:/dea/deaxl/DEA.xlsx", sheet = "Tổng hợp", range = cell_limits(c(1, 1), c(211, 11)))
+
+cat("--- Raw DEA Data after Import (dea_raw) ---\n")
+head(dea_raw, n = 10)
+```
+
+```{r}
+cat("--- Raw DEA Data after Import (dea_raw) ---\n")
+```
+#1.2 Check Dimensions and Column Names of Raw Data
+
+```{r}
+print(dim(dea_raw))
+```
+
+```{r}
+head(dea_raw, n = 10)
+```
+```{r}
+cat("\n--- Column Names in dea_raw ---\n")
+print(colnames(dea_raw))
+```
+#1.3 Clean and Transform DEA Data 
+
+```{r}
+# Clean and transform variables for DEA analysis
+# Filter out rows with NA values in critical input/output columns and the firm type column.
+# Convert relevant columns to numeric type.
+# Create a clear 'Firm_Type' column based on 'Life_Insurance=1'.
+dea_clean <- dea_raw %>%
+ filter(!is.na(`Financial Investment Income`),
+         !is.na(`Benefits/ losses incurred`),
+         !is.na(`Total Operating Exp`),
+         !is.na(`Total Debt`),
+         !is.na(`Total Equity`),
+         !is.na(`Dummy (Life_Insurance=1)`)) %>%
+  mutate(across(c(`Financial Investment Income`, `Benefits/ losses incurred`, `Total Operating Exp`, `Total Debt`, `Total Equity`, `Dummy (Life_Insurance=1)`), as.numeric)) %>% 
+ mutate(Firm_Type = ifelse(`Dummy (Life_Insurance=1)` == 1, "Life", "Non-Life")) 
+cat("\n--- Cleaned DEA Data with Firm Type (dea_clean) ---\n")
+head(dea_clean)
+str(dea_clean) 
+
+```
+
+
+
+# 1.4 Define Inputs and Outputs for DEA
+```{r}
+# Split data into Life and Non-Life firms for separate DEA analysis
+dea_life_data <- dea_clean %>% filter(Firm_Type == "Life")
+dea_nonlife_data <- dea_clean %>% filter(Firm_Type == "Non-Life")
+
+cat("\n--- Dimensions of Life Insurance Data for DEA ---\n")
+print(dim(dea_life_data))
+cat("\n--- Dimensions of Non-Life Insurance Data for DEA ---\n")
+print(dim(dea_nonlife_data))
+
+# Define inputs and outputs for Life Insurance Firms
+inputs_life <- as.matrix(dea_life_data[, c("Total Operating Exp", "Total Debt", "Total Equity")])
+outputs_life <- as.matrix(dea_life_data[, c("Financial Investment Income", "Benefits/ losses incurred")])
+
+# Define inputs and outputs for Non-Life Insurance Firms
+inputs_nonlife <- as.matrix(dea_nonlife_data[, c("Total Operating Exp", "Total Debt", "Total Equity")])
+outputs_nonlife <- as.matrix(dea_nonlife_data[, c("Financial Investment Income", "Benefits/ losses incurred")])
+
+cat("\n--- Dimensions of Inputs and Outputs Matrices for Life Firms ---\n")
+print(dim(inputs_life))
+print(dim(outputs_life))
+cat("\n--- Dimensions of Inputs and Outputs Matrices for Non-Life Firms ---\n")
+print(dim(inputs_nonlife))
+print(dim(outputs_nonlife))
+
+```
+
+
+#1.5  Run DEA Models: CRS, VRS, and Calculate Scale Efficiency
+```{r}
+# --- For Life Insurance Firms ---
+life_eff_scores <- data.frame(Firm = dea_life_data$Firm, Year = dea_life_data$Year, Firm_Type = "Life")
+if (nrow(dea_life_data) > 0 && ncol(inputs_life) > 0 && ncol(outputs_life) > 0 && sum(rowSums(inputs_life) > 0) > 0 && sum(rowSums(outputs_life) > 0) > 0) {
+  dea_result_life_crs <- dea(inputs_life, outputs_life, RTS = "crs", ORIENTATION = "in")
+  dea_result_life_vrs <- dea(inputs_life, outputs_life, RTS = "vrs", ORIENTATION = "in")
+  life_eff_scores$OTE <- dea_result_life_crs$eff
+  life_eff_scores$PTE <- dea_result_life_vrs$eff
+  life_eff_scores$SE <- life_eff_scores$OTE / life_eff_scores$PTE
+  cat("\n--- Summary of DEA Results (Life Firms - CRS Model) ---\n")
+  summary(dea_result_life_crs)
+  cat("\n--- Summary of DEA Results (Life Firms - VRS Model) ---\n")
+  summary(dea_result_life_vrs)
+} else {
+  cat("\nWarning: Insufficient data or invalid inputs/outputs for DEA for Life Insurance Firms. Efficiency scores will be NA.\n")
+  life_eff_scores$OTE <- NA
+  life_eff_scores$PTE <- NA
+  life_eff_scores$SE <- NA
+}
+```
+
+
+```{r}
+# --- For Non-Life Insurance Firms ---
+nonlife_eff_scores <- data.frame(Firm = dea_nonlife_data$Firm, Year = dea_nonlife_data$Year, Firm_Type = "Non-Life")
+if (nrow(dea_nonlife_data) > 0 && ncol(inputs_nonlife) > 0 && ncol(outputs_nonlife) > 0 && sum(rowSums(inputs_nonlife) > 0) > 0 && sum(rowSums(outputs_nonlife) > 0) > 0) {
+  dea_result_nonlife_crs <- dea(inputs_nonlife, outputs_nonlife, RTS = "crs", ORIENTATION = "in")
+  dea_result_nonlife_vrs <- dea(inputs_nonlife, outputs_nonlife, RTS = "vrs", ORIENTATION = "in")
+  nonlife_eff_scores$OTE <- dea_result_nonlife_crs$eff
+  nonlife_eff_scores$PTE <- dea_result_nonlife_vrs$eff
+  nonlife_eff_scores$SE <- nonlife_eff_scores$OTE / nonlife_eff_scores$PTE
+  cat("\n--- Summary of DEA Results (Non-Life Firms - CRS Model) ---\n")
+  summary(dea_result_nonlife_crs)
+  cat("\n--- Summary of DEA Results (Non-Life Firms - VRS Model) ---\n")
+  summary(dea_result_nonlife_vrs)
+} else {
+  cat("\nWarning: Insufficient data or invalid inputs/outputs for DEA for Non-Life Insurance Firms. Efficiency scores will be NA.\n")
+  nonlife_eff_scores$OTE <- NA
+  nonlife_eff_scores$PTE <- NA
+  nonlife_eff_scores$SE <- NA
+}
+```
+#1.6 Combine Efficiency Scores (Life + Non-Life)
+
+```{r}
+# Combine efficiency scores from both groups
+all_eff_scores_detailed <- bind_rows(life_eff_scores, nonlife_eff_scores)
+```
+
+```{r}
+cat("\n--- All Efficiency Scores (Combined, Group-Specific DEA) ---\n")
+head(all_eff_scores_detailed)
+str(all_eff_scores_detailed)
+```
+
+#1.7 Filter for Valid Efficiency Scores
+```{r}
+plot_data_all_eff <- all_eff_scores_detailed %>%
+  filter(!is.na(OTE) & OTE >= 0 & OTE <= 1,
+         !is.na(PTE) & PTE >= 0 & PTE <= 1,
+         !is.na(SE) & SE >= 0 & SE <= 1)
+```
+
+
+```{r}
+# Non-Life PTE Distribution (from VRS)
+nonlife_pte <- plot_data_all_eff %>%
+  filter(Firm_Type == "Non-Life") %>%
+  mutate(PTE_Group = cut(PTE,
+                         breaks = c(0.6, 0.7, 0.8, 0.9, 0.9999, 1.01),
+                         labels = c("0.60 ≤ E < 0.70",
+                                    "0.70 ≤ E < 0.80",
+                                    "0.80 ≤ E < 0.90",
+                                    "0.90 ≤ E < 1.00",
+                                    "E = 1.00"),
+                         right = FALSE))
+
+table_pte_nonlife <- nonlife_pte %>%
+  group_by(PTE_Group) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+kable(table_pte_nonlife,
+      caption = "Table 4.6: Distribution of PTE Scores for Non-Life Insurance Firms",
+      col.names = c("Efficiency Interval", "Number of Firms", "Percentage (%)"))
+```
+
+
+
+```{r}
+# Life PTE Distribution (from VRS)
+life_pte <- plot_data_all_eff %>%
+  filter(Firm_Type == "Life") %>%
+  mutate(PTE_Group = cut(PTE,
+                         breaks = c(0.6, 0.7, 0.8, 0.9, 0.9999, 1.01),
+                         labels = c("0.60 ≤ E < 0.70",
+                                    "0.70 ≤ E < 0.80",
+                                    "0.80 ≤ E < 0.90",
+                                    "0.90 ≤ E < 1.00",
+                                    "E = 1.00"),
+                         right = FALSE))
+
+table_pte_life <- life_pte %>%
+  group_by(PTE_Group) %>%
+  summarise(Count = n()) %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 1))
+
+kable(table_pte_life,
+      caption = "Table 4.5: Distribution of PTE Scores for Life Insurance Firms",
+      col.names = c("Efficiency Interval", "Number of Firms", "Percentage (%)"))
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+
+life_pte <- data.frame(
+  Interval = c("0.60–0.70", "0.70–0.80", "0.80–0.90", "0.90–1.00", "1.00"),
+  Count = c(4, 16, 20, 29, 26)
+)
+nonlife_pte <- data.frame(
+  Interval = c("0.60–0.70", "0.70–0.80", "0.80–0.90", "0.90–1.00", "1.00"),
+  Count = c(4, 8, 38, 32, 30)
+)
+pte_data <- bind_rows(
+  mutate(life_pte, Type = "Life"),
+  mutate(nonlife_pte, Type = "Non-Life")
+)
+
+
+ggplot(pte_data, aes(x = Interval, y = Count, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +
+  labs(title = "Distribution of Pure Technical Efficiency (PTE)",
+       x = "Efficiency Interval",
+       y = "Number of Firms") +
+  scale_fill_manual(values = c("Life" = "#4C6EF5", "Non-Life" = "#ADB5BD")) +
+  theme_minimal(base_size = 14)
+
+```
+
+
+```{r}
+#choose variables input/output
+dea_vars <- dea_clean %>%
+  select(`Total Operating Exp`, `Total Debt`, `Total Equity`,
+         `Financial Investment Income`, `Benefits/ losses incurred`) / 1e9
+
+
+dea_desc_stats <- describe(dea_vars)
+
+
+dea_table <- round(dea_desc_stats[, c("mean", "sd", "min", "max")], 2)
+
+
+rownames(dea_table) <- c("Total Operating Expenses",
+                         "Total Debt",
+                         "Total Equity",
+                         "Financial Inv. Income",
+                         "Benefits/Losses Incurred")
+
+
+kable(dea_table,
+      caption = "Table 4.1: Descriptive Statistics for DEA Inputs and Outputs (Unit: Billion VND)",
+      digits = 2,
+      format.args = list(big.mark = ",")) 
+```
+
+```{r}
+names(dea_clean)
+```
+
+```{r}
+dea_clean_billion <- dea_clean %>%
+  mutate(
+    `Total Operating Exp` = `Total Operating Exp` / 1e9,
+    `Total Debt` = `Total Debt` / 1e9,
+    `Total Equity` = `Total Equity` / 1e9,
+    `Financial Investment Income` = `Financial Investment Income` / 1e9,
+    `Benefits/ losses incurred` = `Benefits/ losses incurred` / 1e9
+  )
+```
+
+
+```{r}
+dea_long <- dea_clean_billion %>%
+  select(`Total Operating Exp`, `Total Debt`, `Total Equity`,
+         `Financial Investment Income`, `Benefits/ losses incurred`) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+ggplot(dea_long, aes(x = Value)) +
+  geom_histogram(fill = "white", color = "black", bins = 30) +
+  facet_wrap(~ Variable, scales = "free", ncol = 2) +
+  scale_x_log10() +  # ✨ chuyển trục X sang log-scale
+  theme_bw(base_size = 12) +
+  labs(
+    title = "Histogram of DEA Inputs and Outputs (Log Scale, Unit: Billion VND)",
+    x = "Value (Log scale, Billion VND)", y = "Frequency"
+  )
+```
+
+```{r}
+# Average DEA Inputs and Outputs by Year
+dea_by_year <- dea_clean %>%
+  group_by(Year) %>%
+  summarise(
+    `Total Operating Expenses` = mean(`Total Operating Exp`, na.rm = TRUE) / 1e9,
+    `Total Debt` = mean(`Total Debt`, na.rm = TRUE) / 1e9,
+    `Total Equity` = mean(`Total Equity`, na.rm = TRUE) / 1e9,
+    `Financial Investment Income` = mean(`Financial Investment Income`, na.rm = TRUE) / 1e9,
+    `Benefits/Losses Incurred` = mean(`Benefits/ losses incurred`, na.rm = TRUE) / 1e9
+  ) %>%
+  pivot_longer(cols = -Year, names_to = "Variable", values_to = "Avg_Value")
+
+
+ggplot(dea_by_year, aes(x = Year, y = Avg_Value, group = Variable)) +
+  geom_line(color = "black", size = 1) +
+  geom_point(color = "black", size = 2) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+  theme_bw(base_size = 13) +
+  labs(
+    title = "Average DEA Inputs and Outputs by Year (Unit: Billion VND)",
+    x = "Year",
+    y = "Average Value"
+  ) +
+  theme(
+    strip.background = element_rect(fill = "gray90", color = "black"),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
+  )
+```
+
+
+#1.9 Save All Efficiency Scores
+
+```{r}
+# Save the detailed efficiency scores to a CSV file
+write.csv(all_eff_scores_detailed, "D:/dea/deaxl/all_efficiency_scores_detailed.csv", row.names = FALSE)
+
+cat("\n--- All Efficiency Scores with Firm Type Saved to all_efficiency_scores_detailed.csv ---\n")
+head(all_eff_scores_detailed, n=10)
+
+```
+```{r}
+table_avg_eff_firmtype <- plot_data_all_eff %>%
+  group_by(Firm_Type) %>%
+  summarise(
+    Avg_OTE = round(mean(OTE, na.rm = TRUE), 3),
+    Avg_PTE = round(mean(PTE, na.rm = TRUE), 3),
+    Avg_SE = round(mean(SE, na.rm = TRUE), 3)
+  )
+
+table_avg_eff_firmtype
+```
+
+
+
+# Table Average by Year 
+
+```{r}
+table_avg_eff_year <- plot_data_all_eff %>%
+  group_by(Year) %>%
+  summarise(
+    Avg_OTE = round(mean(OTE, na.rm = TRUE), 3),
+    Avg_PTE = round(mean(PTE, na.rm = TRUE), 3),
+    Avg_SE = round(mean(SE, na.rm = TRUE), 3)
+  )
+
+table_avg_eff_year
+```
+
+
+
+```{r}
+ #Calculate descriptive statistics for DEA indices
+dea_stats <- all_eff_scores_detailed %>%
+  select(OTE, PTE, SE) %>%
+  summarise(
+    OTE_Mean = mean(OTE, na.rm = TRUE),
+    OTE_SD   = sd(OTE, na.rm = TRUE),
+    OTE_Min  = min(OTE, na.rm = TRUE),
+    OTE_Max  = max(OTE, na.rm = TRUE),
+    
+    PTE_Mean = mean(PTE, na.rm = TRUE),
+    PTE_SD   = sd(PTE, na.rm = TRUE),
+    PTE_Min  = min(PTE, na.rm = TRUE),
+    PTE_Max  = max(PTE, na.rm = TRUE),
+    
+    SE_Mean = mean(SE, na.rm = TRUE),
+    SE_SD   = sd(SE, na.rm = TRUE),
+    SE_Min  = min(SE, na.rm = TRUE),
+    SE_Max  = max(SE, na.rm = TRUE)
+  )
+
+dea_summary <- tibble::tibble(
+  `Score Type` = c("OTE", "PTE", "SE"),
+  Mean     = c(dea_stats$OTE_Mean, dea_stats$PTE_Mean, dea_stats$SE_Mean),
+  `Std. Dev.` = c(dea_stats$OTE_SD, dea_stats$PTE_SD, dea_stats$SE_SD),
+  Min      = c(dea_stats$OTE_Min, dea_stats$PTE_Min, dea_stats$SE_Min),
+  Max      = c(dea_stats$OTE_Max, dea_stats$PTE_Max, dea_stats$SE_Max)
+)
+
+dea_summary[, 2:5] <- round(dea_summary[, 2:5], 2)
+
+dea_summary
+```
+
+
+
+```{r}
+# Average DEA Efficiency Scores by Year – Life Insurance Firms
+eff_by_year_life <- all_eff_scores_detailed %>%
+  filter(Firm_Type == "Life") %>%
+  group_by(Year) %>%
+  summarise(
+    Avg_OTE = mean(OTE, na.rm = TRUE),
+    Avg_PTE = mean(PTE, na.rm = TRUE),
+    Avg_SE = mean(SE, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = starts_with("Avg_"), names_to = "Score_Type", values_to = "Value")
+
+ggplot(eff_by_year_life, aes(x = Year, y = Value, color = Score_Type, group = Score_Type)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(
+    values = c("Avg_OTE" = "gray30",   
+               "Avg_PTE" = "gray50",    
+               "Avg_SE"  = "gray70"),   
+    labels = c("OTE", "PTE", "SE")
+  ) +
+  labs(
+    title = "Figure 4.5: Average DEA Efficiency Scores by Year – Life Insurance Firms",
+    x = "Year", y = "Average Score", color = "Score Type"
+  ) +
+  theme_bw(base_size = 13) +
+  ylim(0.6, 1.0)
+```
+```{r}
+# Average DEA Efficiency Scores by Year – Non-Life Insurance Firms
+eff_by_year_nonlife <- all_eff_scores_detailed %>%
+  filter(Firm_Type == "Non-Life") %>%
+  group_by(Year) %>%
+  summarise(
+    Avg_OTE = mean(OTE, na.rm = TRUE),
+    Avg_PTE = mean(PTE, na.rm = TRUE),
+    Avg_SE = mean(SE, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = starts_with("Avg_"), names_to = "Score_Type", values_to = "Value")
+
+
+ggplot(eff_by_year_nonlife, aes(x = Year, y = Value, color = Score_Type, group = Score_Type)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(
+    values = c("Avg_OTE" = "black",     
+               "Avg_PTE" = "dimgray",   
+               "Avg_SE"  = "steelblue4"), 
+    labels = c("OTE", "PTE", "SE")
+  ) +
+  labs(
+    title = "Figure 4.6: Average DEA Efficiency Scores by Year – Non-Life Insurance Firms",
+    x = "Year", y = "Average Score", color = "Score Type"
+  ) +
+  theme_bw(base_size = 13) +
+  ylim(0.6, 1.0)
+```
+
+```{r}
+# Convert to long form for easy histogram drawing
+eff_hist_data <- all_eff_scores_detailed %>%
+  pivot_longer(cols = c(OTE, PTE, SE), 
+               names_to = "Efficiency_Type", 
+               values_to = "Efficiency_Score") %>%
+  filter(!is.na(Efficiency_Score)) 
+```
+
+
+```{r}
+# Histogram for Life Firms
+eff_hist_data %>%
+  filter(Firm_Type == "Life") %>%
+  ggplot(aes(x = Efficiency_Score)) +
+  geom_histogram(bins = 20, fill = "#4D4D4D", color = "white", alpha = 0.8) +
+  facet_wrap(~ Efficiency_Type, scales = "free_y") +
+  theme_bw(base_size = 13) +
+  labs(
+    title = "Figure 4.7: Histogram of DEA Efficiency Scores – Life Insurance Firms",
+    x = "Efficiency Score",
+    y = "Frequency"
+  ) +
+  theme(strip.background = element_rect(fill = "gray90", color = NA),
+        strip.text = element_text(face = "bold"),
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+```{r}
+# Histogram for Non-Life Firms
+eff_hist_data %>%
+  filter(Firm_Type == "Non-Life") %>%
+  ggplot(aes(x = Efficiency_Score)) +
+  geom_histogram(bins = 20, fill = "#6C7A89", color = "white", alpha = 0.8) +
+  facet_wrap(~ Efficiency_Type, scales = "free_y") +
+  theme_bw(base_size = 13) +
+  labs(
+    title = "Figure 4.8: Histogram of DEA Efficiency Scores – Non-Life Insurance Firms",
+    x = "Efficiency Score",
+    y = "Frequency"
+  ) +
+  theme(strip.background = element_rect(fill = "gray90", color = NA),
+        strip.text = element_text(face = "bold"),
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+
+
+# Phase 2: Determinants Analysis using Truncated Regression
+This stage combines the DEA efficiency scores with firm-specific and macroeconomic determinants and performs truncated regression analysis. The use of a truncated regression model is appropriate given the bounded nature of DEA efficiency scores between 0 and 1.
+
+
+#2.1 Data Import and Initial Cleaning 
+```{r}
+reg_raw <- read_excel("D:/data/regress/Regression.xlsx", sheet = "Sheet1")
+```
+
+
+```{r}
+cat("--- Raw Regression Data (reg_raw) ---\n")
+head(reg_raw, n=10)
+str(reg_raw)
+```
+#2.2 Clean and Transform Regression Variables
+
+```{r}
+# Clean and prepare regression variables
+reg_clean <- reg_raw %>%
+  filter(!is.na(LEV), !is.na(GWP), !is.na(SIZE), !is.na(`Interest Rate`), !is.na(`%Inflation`)) %>%
+  mutate(
+    across(c(LEV, GWP, SIZE, AGE, LIFEDUM, `Interest Rate`, `%Inflation`), as.numeric),
+    
+    Size_log = log(SIZE) 
+  ) %>%
+  rename(Leverage = LEV,
+         Gross_Written_Premium = GWP,
+         Interest_Rate = `Interest Rate`, # Macroeconomic variable
+         Inflation_Rate = `%Inflation`) %>% # Macroeconomic variable
+  group_by(Firm) %>%
+  mutate(Growth = (Gross_Written_Premium - lag(Gross_Written_Premium)) / lag(Gross_Written_Premium)) %>%
+  ungroup() %>%
+  filter(!is.na(Growth))
+```
+
+```{r}
+eff_data <- read.csv("D:/dea/deaxl/all_efficiency_scores_detailed.csv")
+
+```
+
+
+#2.3 Merge Regression Data with DEA Efficiency Scores
+
+
+```{r}
+
+reg_merged <- left_join(reg_clean, eff_data, by = c("Firm", "Year"))
+
+reg_merged <- reg_merged %>%
+  filter(!is.na(OTE), 
+         !is.na(Leverage), 
+         !is.na(Gross_Written_Premium),
+         !is.na(Size_log),
+         !is.na(Growth),
+         !is.na(Interest_Rate),
+         !is.na(Inflation_Rate),
+         !is.na(AGE),
+         !is.na(Firm_Type)) # Crucial for splitting analysis
+
+cat("\n--- Merged Data for Regression (reg_merged) ---\n")
+head(reg_merged)
+str(reg_merged)
+summary(reg_merged$OTE)
+
+```
+#2.4 Descriptive Statistics of Regression Variables
+```{r}
+
+reg_vars <- reg_merged %>%
+  select(OTE, Size_log, Leverage, Growth, Interest_Rate, Inflation_Rate, AGE)
+
+desc_stats <- describe(reg_vars)
+summary_table <- round(desc_stats[, c("mean", "sd", "min", "max")], 2)
+
+rownames(summary_table) <- c("OTE", "Size_log", "Leverage", "Growth", 
+                             "Interest_Rate", "Inflation_Rate", "AGE")
+
+kable(summary_table,
+      caption = "Table 4.2: Descriptive Statistics for Truncated Regression",
+      col.names = c("Mean", "Std. Dev.", "Min", "Max"))
+```
+#2.5 Subset Data by Firm Type (Life vs Non-Life)
+
+```{r}
+life_data <- reg_merged %>% filter(Firm_Type == "Life")
+nonlife_data <- reg_merged %>% filter(Firm_Type == "Non-Life")
+```
+
+
+```{r}
+cat("Life Insurance Firms:", nrow(life_data), "\n")
+cat("Non-Life Insurance Firms:", nrow(nonlife_data), "\n")
+```
+#2.6 Visualize Regression Variables (Histograms)
+
+```{r}
+library(gridExtra)
+
+
+reg_vars_long <- reg_vars %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+ggplot(reg_vars_long, aes(x = Value)) +
+  geom_histogram(color = "black", fill = "white", bins = 20) +
+  facet_wrap(~ Variable, scales = "free", ncol = 3) +
+  labs(title = "Histogram of Truncated Regression Variables", x = "Value") +
+  theme_minimal()
+
+```
+```{r}
+reg_vars_long <- reg_merged %>%
+  select(Year, OTE, Size_log, Leverage, Growth, Interest_Rate, Inflation_Rate, AGE) %>%
+  pivot_longer(cols = -Year, names_to = "Variable", values_to = "Value")
+
+reg_data_yearly <- reg_vars_long %>%
+  group_by(Year, Variable) %>%
+  summarise(Average = mean(Value, na.rm = TRUE), .groups = "drop")
+
+```
+
+
+```{r}
+reg_data_yearly$Variable <- dplyr::recode(reg_data_yearly$Variable,
+                                   "OTE" = "Technical Efficiency (OTE)",
+                                   "Size_log" = "Firm Size (log)",
+                                   "Leverage" = "Leverage Ratio",
+                                   "Growth" = "Growth Rate",
+                                   "Interest_Rate" = "Interest Rate",
+                                   "Inflation_Rate" = "Inflation Rate",
+                                   "AGE" = "Firm Age")
+
+reg_data_yearly$Variable <- case_when(
+  reg_data_yearly$Variable == "OTE" ~ "Technical Efficiency (OTE)",
+  reg_data_yearly$Variable == "Size_log" ~ "Firm Size (log)",
+  reg_data_yearly$Variable == "Leverage" ~ "Leverage Ratio",
+  reg_data_yearly$Variable == "Growth" ~ "Growth Rate",
+  reg_data_yearly$Variable == "Interest_Rate" ~ "Interest Rate",
+  reg_data_yearly$Variable == "Inflation_Rate" ~ "Inflation Rate",
+  reg_data_yearly$Variable == "AGE" ~ "Firm Age",
+  TRUE ~ reg_data_yearly$Variable
+)
+
+ggplot(reg_data_yearly, aes(x = Year, y = Average)) +
+  geom_line(color = "black") +
+  geom_point(color = "black") +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+  labs(title = "Figure 4.4 Average Values of Truncated Regression Variables by Year",
+       x = "Year", y = "Average Value") +
+  theme_minimal(base_size = 12) +
+  theme(strip.background = element_rect(fill = "gray90"),
+        strip.text = element_text(face = "bold"),
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+#2.7 Run Truncated Regression Models:
+
+```{r}
+# Truncated Regression For All Insurance Firm 
+trunc_all <- truncreg(OTE ~ Leverage + Size_log + AGE + Growth + Interest_Rate + Inflation_Rate,
+                      data = reg_merged,
+                      lower = 0, # Giới hạn dưới của biến phụ thuộc
+                      upper = 1) # Giới hạn trên của biến phụ thuộc
+
+screenreg(trunc_all,
+          custom.coef.names = c("(Intercept)", "Leverage", "Log of Size", "Firm Age", "Growth", "Interest Rate", "Inflation Rate", "Sigma"), # Đã thêm "Sigma"
+          custom.model.names = "All Insurance Firms",
+          caption = "Table 4.8: Truncated Regression Results for All Insurance Firms",
+          digits = 3)
+```
+
+
+
+```{r}
+# Truncated Regression For Life Insurance Firms 
+trunc_life <- truncreg(OTE ~ Leverage + Size_log + AGE + Growth + Interest_Rate + Inflation_Rate,
+                       data = life_data,
+                       lower = 0, 
+                       upper = 1) 
+summary(trunc_life)
+```
+
+
+```{r}
+# Truncated Regression For Non-Life Insurance Firms 
+trunc_nonlife <- truncreg(OTE ~ Leverage + Size_log + AGE + Growth + Interest_Rate + Inflation_Rate,
+                          data = nonlife_data,
+                          lower = 0, 
+                          upper = 1) 
+summary(trunc_nonlife)
+```
+#2.8 Summary Table 
+
+
+```{r}
+screenreg(list("Life Insurance" = trunc_life, "Non-Life Insurance" = trunc_nonlife),
+          custom.model.names = c("Life Insurance", "Non-Life Insurance"),
+          digits = 3,
+          caption = "Truncated Regression Results for Life and Non-Life Insurance Firms")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
