@@ -17,28 +17,33 @@ This project uses panel data of 30 insurance companies in Vietnam from 2016 to 2
 
 ##  Variables
 
-### 🔹 Stage 1 (DEA)
+### 🔹 Stage 1 Data Envelopment Analysis (DEA) 
+We use the following operational variables to calculate efficiency scores:
 **Inputs:**
-- Total Operating Expenses
-- Total Debt
-- Total Equity
+- Total Operating Expenses: Costs of insurance operations (Billion VND).
+- Total Debt: Total liabilities (Billion VND).
+- Total Equity: Owners' equity (Billion VND).
 
 **Outputs:**
-- Financial Investment Income
-- Benefits/Losses Incurred
+- Financial Investment Income: Revenue from investments (Billion VND).
+- Benefits/Losses Incurred: Claims and insurance benefits paid (Billion VND).
+
 
 ### 🔹 Stage 2 (Truncated Regression)
-
+We investigate the determinants of Overall Technical Efficiency (OTE) using these variables:
 **Dependent Variable:**
-- OTE (Overall Technical Efficiency, range [0,1])
-
+Efficiency score (Range: 0 to 1).
 **Independent Variables:**
 - Size_log: Log of firm size (total assets)
-- Leverage: Debt ratio
-- Growth: Premium growth rate
+- Leverage: Debt-to-Equity ratio (%).
+- Growth: Annual Net Premium growth rate (%).
 - Interest Rate: Market interest rate
 - Inflation Rate: Inflation level
-- Age: Firm age
+- Age: Firm age ( Number of years since establishment). 
+**Macroeconomic Independent Variables (Macro):**
+- Interest Rate: Annual market interest rate (%).
+- Inflation Rate: Annual Consumer Price Index change (%).
+
 
 ##  Data Availability
 Due to confidentiality and data source restrictions, the full dataset is not publicly available.
@@ -46,3 +51,4 @@ Due to confidentiality and data source restrictions, the full dataset is not pub
 ##  Tools
 - Data processing: Excel
 - Analysis: R
+
