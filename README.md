@@ -21,6 +21,7 @@ This project analyzes the performance of insurance companies in Vietnam using a 
 - For non-life insurers, firm age and sensitivity to interest rates play a significant role
 - Life insurance firms benefit from economies of scale and internal capital strategies
 - Non-life firms are more influenced by macroeconomic conditions and operational experience
+
 -> Firms can improve efficiency by aligning strategies with their operational characteristics
 
 ## 🎯 Purpose
