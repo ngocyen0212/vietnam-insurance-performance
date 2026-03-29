@@ -31,8 +31,10 @@ We use the following operational variables to calculate efficiency scores:
 
 ### 🔹 Stage 2 (Truncated Regression)
 We investigate the determinants of Overall Technical Efficiency (OTE) using these variables:
+
 **Dependent Variable:**
 Efficiency score (Range: 0 to 1).
+
 **Independent Variables:**
 - Size_log: Log of firm size (total assets)
 - Leverage: Debt-to-Equity ratio (%).
@@ -40,6 +42,7 @@ Efficiency score (Range: 0 to 1).
 - Interest Rate: Market interest rate
 - Inflation Rate: Inflation level
 - Age: Firm age ( Number of years since establishment). 
+
 **Macroeconomic Independent Variables (Macro):**
 - Interest Rate: Annual market interest rate (%).
 - Inflation Rate: Annual Consumer Price Index change (%).
